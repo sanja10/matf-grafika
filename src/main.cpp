@@ -30,8 +30,8 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 unsigned int loadTexture(char const * path);
 
 // settings
-const unsigned int SCR_WIDTH = 800;
-const unsigned int SCR_HEIGHT = 600;
+const unsigned int SCR_WIDTH = 1000;
+const unsigned int SCR_HEIGHT = 900;
 
 // camera
 
@@ -59,13 +59,17 @@ struct ProgramState {
     bool ImGuiEnabled = false;
     Camera camera;
     bool CameraMouseMovementUpdateEnabled = true;
-    glm::vec3 snowManPosition = glm::vec3(0.0f);
-    glm::vec3 treePosition = glm::vec3(0.0f);
-    float snowManScale = 1.7f;
-    float treeScale = 1.0f;
+    glm::vec3 snowManPosition = glm::vec3(-2.0f, -1.5f, -4.0f);
+    glm::vec3 treePosition = glm::vec3(3.0f, 1.0f, -8.0f);
+    float snowManScale = 1.2f;
+    float treeScale = 0.04f;
+    float giftScale = 0.5f;
+
+    unsigned int numOfGifts = 4;
+
     PointLight pointLight;
     ProgramState()
-            : camera(glm::vec3(0.0f, 0.0f, 4.0f)) {}
+            : camera(glm::vec3(0.0f, -1.0f, 12.0f)) {}
 
     void SaveToFile(std::string filename);
 
@@ -132,7 +136,7 @@ int main() {
     glfwSetScrollCallback(window, scroll_callback);
     glfwSetKeyCallback(window, key_callback);
     // tell GLFW to capture our mouse
-//    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    //glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     // glad: load all OpenGL function pointers
     // ---------------------------------------
@@ -209,10 +213,10 @@ int main() {
 
 
     glm::vec3 giftPositions[] = {
-            glm::vec3(0.0f, -1.0f, -1.0f),
-            glm::vec3(1.0f, -2.0f, -1.0f),
-            glm::vec3(-4.0f, -1.0f, -1.0f),
-            glm::vec3(-3.0f, -2.0f, -1.0f)
+            glm::vec3(3.0f, 1.0f, -1.0f),
+            glm::vec3(3.3f, 1.2f, -1.0f),
+            glm::vec3(2.5f, 1.0f, -1.0f),
+            glm::vec3(2.0f, 1.2f, -1.0f)
     };
 
     unsigned int giftVBO, giftVAO;
@@ -244,14 +248,16 @@ int main() {
     // -------------------------
     Shader snowManShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader giftShader("resources/shaders/box.vs", "resources/shaders/box.fs");
+    Shader treeShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
 
     unsigned int giftTexture = loadTexture("resources/textures/wrapPaper.png");
     // load models
     // -----------
     Model snowManModel("resources/objects/snowman/snowman_finish.obj");
+    Model treeModel("resources/objects/Christmas_Tree/Christmas_Tree/12150_Christmas_Tree_V2_L2.obj");
 
     snowManModel.SetShaderTextureNamePrefix("material.");
-
+    treeModel.SetShaderTextureNamePrefix("material.");
 
     PointLight& pointLight = programState->pointLight;
     pointLight.position = glm::vec3(4.0f, 4.0, 0.0);
@@ -270,7 +276,7 @@ int main() {
 
     // render loop
     // -----------
-    rg::ServiceLocator::Get().getEventController().subscribeToEvent(rg::EventType::MouseMoved, &programState->camera);
+    //rg::ServiceLocator::Get().getEventController().subscribeToEvent(rg::EventType::MouseMoved, &programState->camera);
     rg::ServiceLocator::Get().getEventController().subscribeToEvent(rg::EventType::Keyboard, &programState->camera);
 
     while (!glfwWindowShouldClose(window)) {
@@ -324,6 +330,31 @@ int main() {
 
 
 
+        treeShader.use();
+        pointLight.position = glm::vec3(4.0 * cos(0.9), 4.0f, 4.0 * sin(0.9));
+        treeShader.setVec3("pointLight.position", pointLight.position);
+        treeShader.setVec3("pointLight.ambient", pointLight.ambient);
+        treeShader.setVec3("pointLight.diffuse", pointLight.diffuse);
+        treeShader.setVec3("pointLight.specular", pointLight.specular);
+        treeShader.setFloat("pointLight.constant", pointLight.constant);
+        treeShader.setFloat("pointLight.linear", pointLight.linear);
+        treeShader.setFloat("pointLight.quadratic", pointLight.quadratic);
+        treeShader.setVec3("viewPosition", programState->camera.Position);
+        treeShader.setFloat("material.shininess", 32.0f);
+
+        treeShader.setMat4("projection", projection);
+        treeShader.setMat4("view", view);
+
+        // render the loaded model
+        glm::mat4 treeModelMatrix = glm::mat4(1.0f);
+        treeModelMatrix = glm::translate(treeModelMatrix,
+                               programState->treePosition);
+        treeModelMatrix = glm::scale(treeModelMatrix, glm::vec3(programState->treeScale));
+        treeModelMatrix = glm::rotate(treeModelMatrix, -45.0f, glm::vec3(1.0f, 0.0f, 0.0f));
+        treeModelMatrix = glm::rotate(treeModelMatrix, -45.0f, glm::vec3(0.0f, 0.0f, 1.0f));
+
+        treeShader.setMat4("model", treeModelMatrix);
+        treeModel.Draw(treeShader);
 
         giftShader.use();
 
@@ -333,12 +364,13 @@ int main() {
         glBindTexture(GL_TEXTURE_2D, giftTexture);
         glBindVertexArray(giftVAO);
 
-        for (int i = 0; i < 4; i++) {
+        for (unsigned int i = 0; i < programState->numOfGifts; i++) {
         // render the loaded model
             glm::mat4 giftModel = glm::mat4(1.0f);
             giftModel = glm::translate(giftModel,
                                    giftPositions[i]); // translate it down so it's at the center of the scene
             //giftModel = glm::rotate(giftModel, ((float)tan(glfwGetTime() * 0.2)), glm::vec3(0.0f, 0.0f, 1.0f));
+            giftModel = glm::scale(giftModel, glm::vec3(programState->giftScale));
             giftShader.setMat4("model", giftModel);
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }
@@ -396,8 +428,8 @@ void processInput(GLFWwindow *window) {
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
     // make sure the viewport matches the new window dimensions; note that width and
     // height will be significantly larger than specified on retina displays.
-    //glViewport(0, 0, width, height);
-    glViewport(0,0, 800, 600);
+    glViewport(0, 0, width, height);
+    //glViewport(0,0, 800, 600);
 }
 
 // glfw: whenever the mouse moves, this callback is called
