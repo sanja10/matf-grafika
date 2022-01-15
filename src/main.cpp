@@ -62,7 +62,7 @@ struct ProgramState {
     bool CameraMouseMovementUpdateEnabled = true;
     glm::vec3 snowManPosition = glm::vec3(-2.0f, -1.5f, -4.0f);
     glm::vec3 treePosition = glm::vec3(3.0f, 1.0f, -8.0f);
-    float snowManScale = 1.2f;
+    float snowManScale = 2.0f;
     float treeScale = 0.04f;
     float giftScale = 0.5f;
 
@@ -265,6 +265,32 @@ int main() {
             1.0f, -1.0f,  1.0f
     };
 
+    // snowflake rectangle
+    float transparentVertices[] = {
+            // positions         // texture Coords (swapped y coordinates because texture is flipped upside down)
+            0.0f,  0.5f,  0.0f,  0.0f,  0.0f,
+            0.0f, -0.5f,  0.0f,  0.0f,  1.0f,
+            1.0f, -0.5f,  0.0f,  1.0f,  1.0f,
+
+            0.0f,  0.5f,  0.0f,  0.0f,  0.0f,
+            1.0f, -0.5f,  0.0f,  1.0f,  1.0f,
+            1.0f,  0.5f,  0.0f,  1.0f,  0.0f
+    };
+
+    vector<glm::vec3> snowflakePosition
+            {
+                    glm::vec3(-1.0f, 4.0f, -0.48f),
+                    glm::vec3( 2.5f, 4.5f, 0.51f),
+                    glm::vec3( 0.6f, 4.0f, 0.7f),
+                    glm::vec3(1.3f, 4.0f, -2.3f),
+                    glm::vec3 (4.5f, 4.5f, -0.6f),
+                    glm::vec3(-2.0f, 4.0f, -0.48f),
+                    glm::vec3( 2.5f, 3.0f, 0.51f),
+                    glm::vec3( 0.6f, 1.0f, 0.7f),
+                    glm::vec3(1.3f, 4.0f, -2.3f),
+                    glm::vec3 (4.5f, 4.0f, -0.6f)
+            };
+
     unsigned int giftVBO, giftVAO;
     glGenVertexArrays(1, &giftVAO);
     glGenBuffers(1, &giftVBO);
@@ -296,6 +322,20 @@ int main() {
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 
+
+    //snowflake VAO
+    unsigned int transparentVAO, transparentVBO;
+    glGenVertexArrays(1, &transparentVAO);
+    glGenBuffers(1, &transparentVBO);
+    glBindVertexArray(transparentVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, transparentVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(transparentVertices), transparentVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glBindVertexArray(0);
+
     // configure global opengl state
     // -----------------------------
     glEnable(GL_DEPTH_TEST);
@@ -306,8 +346,9 @@ int main() {
     Shader giftShader("resources/shaders/box.vs", "resources/shaders/box.fs");
     Shader treeShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
-
+    Shader snowShader("resources/shaders/snowflakeShader.vs", "resources/shaders/snowflakeShader.fs");
     unsigned int giftTexture = loadTexture("resources/textures/wrapPaper.png");
+    unsigned int snowflakeTexture = loadTexture("resources/textures/snowflake.png");
     // load models
     // -----------
     Model snowManModel("resources/objects/snowman/snowman_finish.obj");
@@ -317,9 +358,9 @@ int main() {
     treeModel.SetShaderTextureNamePrefix("material.");
 
     PointLight& pointLight = programState->pointLight;
-    pointLight.position = glm::vec3(4.0f, 4.0, 0.0);
+    pointLight.position = glm::vec3(4.0f, 3.0, -8.0);
     pointLight.ambient = glm::vec3(0.9, 0.9, 0.9);
-    pointLight.diffuse = glm::vec3(0.6, 0.6, 0.6);
+    pointLight.diffuse = glm::vec3(0.8, 0.8, 0.6);
     pointLight.specular = glm::vec3(1.0, 1.0, 1.0);
 
     pointLight.constant = 1.0f;
@@ -442,6 +483,26 @@ int main() {
         }
         glBindVertexArray(0);
 
+        // using blanding for snowflakes- discard techinque
+        snowShader.use();
+        snowShader.setMat4("projection", projection);
+        snowShader.setMat4("view", view);
+
+        glBindVertexArray(transparentVAO);
+        glBindTexture(GL_TEXTURE_2D, snowflakeTexture);
+        for (unsigned int i = 0; i < snowflakePosition.size(); i++)
+        {
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, snowflakePosition[i]);
+            //float coefTranslate = -0.5*tan(glfwGetTime()*0.6);
+            model = glm::translate(model, glm::vec3(0.0f,-0.5*tan(glfwGetTime()*0.6), 0.0f));
+            float angle= 20*tan(glfwGetTime());
+            model=glm::rotate(model,glm::radians(angle),glm::vec3(1.0f,0.5f,0.5f));
+            model=glm::scale(model,glm::vec3(0.5f,0.5f,0.5f));
+            snowShader.setMat4("model", model);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
+
 
         glDepthFunc(GL_LEQUAL); //change depth function so depth test passes when values are equal to depth buffer's content
         skyboxShader.use();
@@ -476,8 +537,10 @@ int main() {
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 
-    glDeleteBuffers(1, &giftVAO);
+    glDeleteVertexArrays(1, &giftVAO);
     glDeleteBuffers(1, &giftVBO);
+    glDeleteVertexArrays(1, &skyboxVAO);
+    glDeleteBuffers(1, &skyboxVBO);
     // glfw: terminate, clearing all previously allocated GLFW resources.
     // ------------------------------------------------------------------
     glfwTerminate();
