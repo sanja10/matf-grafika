@@ -58,16 +58,25 @@ struct PointLight {
 struct ProgramState {
     glm::vec3 clearColor = glm::vec3(0.5f, 0.9f, 0.2f);
     bool ImGuiEnabled = false;
+
+    // camera
     Camera camera;
     bool CameraMouseMovementUpdateEnabled = true;
+
+    // settings
     glm::vec3 snowManPosition = glm::vec3(-2.0f, -1.5f, -4.0f);
     glm::vec3 treePosition = glm::vec3(3.0f, 1.0f, -8.0f);
     float snowManScale = 2.0f;
     float treeScale = 0.04f;
     float giftScale = 0.5f;
-
     unsigned int numOfGifts = 4;
 
+    // light settings
+    glm::vec3 dirLightDir = glm::vec3(-0.2f, -1.0f, -0.3f);
+    glm::vec3 dirLightAmbDiffSpec = glm::vec3(0.3f, 0.3f,0.2f);
+    bool spotlightOn = true;
+    bool blinn = false;
+    bool blinnKeyPressed = false;
     PointLight pointLight;
     ProgramState()
             : camera(glm::vec3(0.0f, -1.0f, 12.0f)) {}
@@ -166,7 +175,7 @@ int main() {
     ImGui_ImplOpenGL3_Init("#version 330 core");
 
     float giftVertices[] = {
-            //positions           //normals          //texCoords
+            //positions                        //normals                      //texCoords
             -0.5f, -0.5f, -0.5f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f,
             0.5f, -0.5f, -0.5f, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f,
             0.5f, 0.5f, -0.5f, 0.0f, 0.0f, -1.0f, 1.0f, 1.0f,
@@ -267,7 +276,7 @@ int main() {
 
     // snowflake rectangle
     float transparentVertices[] = {
-            // positions         // texture Coords (swapped y coordinates because texture is flipped upside down)
+            // positions                // texture Coords (swapped y coordinates because texture is flipped upside down)
             0.0f,  0.5f,  0.0f,  0.0f,  0.0f,
             0.0f, -0.5f,  0.0f,  0.0f,  1.0f,
             1.0f, -0.5f,  0.0f,  1.0f,  1.0f,
@@ -278,19 +287,21 @@ int main() {
     };
 
     vector<glm::vec3> snowflakePosition
-            {
-                    glm::vec3(-1.0f, 4.0f, -0.48f),
-                    glm::vec3( 2.5f, 4.5f, 0.51f),
-                    glm::vec3( 0.6f, 4.0f, 0.7f),
-                    glm::vec3(1.3f, 4.0f, -2.3f),
-                    glm::vec3 (4.5f, 4.5f, -0.6f),
-                    glm::vec3(-2.0f, 4.0f, -0.48f),
-                    glm::vec3( 2.5f, 3.0f, 0.51f),
-                    glm::vec3( 0.6f, 1.0f, 0.7f),
-                    glm::vec3(1.3f, 4.0f, -2.3f),
-                    glm::vec3 (4.5f, 4.0f, -0.6f)
-            };
+    {
+           glm::vec3(-1.0f, 4.0f, -0.45f),
+           glm::vec3( 2.5f, 4.5f, 0.55f),
+           glm::vec3( 0.5f, 4.0f, 0.7f),
+           glm::vec3(1.5f, 4.0f, -2.5f),
+           glm::vec3 (4.5f, 4.5f, -0.5f),
+           glm::vec3(-2.0f, 4.0f, -0.50f),
+           glm::vec3( 2.7f, 3.0f, 0.50f),
+           glm::vec3( 0.5f, 3.0f, 0.7f),
+           glm::vec3(1.5f, 4.0f, -2.5f),
+           glm::vec3 (4.7f, 4.0f, -0.55f)
+    };
 
+
+    // gift VAO, VABO
     unsigned int giftVBO, giftVAO;
     glGenVertexArrays(1, &giftVAO);
     glGenBuffers(1, &giftVBO);
@@ -312,7 +323,7 @@ int main() {
     glBindVertexArray(0);
 
 
-    //skybox
+    //skybox VAO, VBO
     unsigned int skyboxVAO, skyboxVBO;
     glGenVertexArrays(1, &skyboxVAO);
     glGenBuffers(1, &skyboxVBO);
@@ -323,7 +334,7 @@ int main() {
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 
 
-    //snowflake VAO
+    //snowflake VAO, VBO
     unsigned int transparentVAO, transparentVBO;
     glGenVertexArrays(1, &transparentVAO);
     glGenBuffers(1, &transparentVBO);
@@ -342,16 +353,19 @@ int main() {
 
     // build and compile shaders
     // -------------------------
-    Shader snowManShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
+    Shader snowManShader("resources/shaders/model.vs", "resources/shaders/model.fs");
     Shader giftShader("resources/shaders/box.vs", "resources/shaders/box.fs");
     Shader treeShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
     Shader snowShader("resources/shaders/snowflakeShader.vs", "resources/shaders/snowflakeShader.fs");
+
+    // load textures
     unsigned int giftTexture = loadTexture("resources/textures/wrapPaper.png");
     unsigned int snowflakeTexture = loadTexture("resources/textures/snowflake.png");
+
     // load models
     // -----------
-    Model snowManModel("resources/objects/snowman/snowman_finish.obj");
+    Model snowManModel("resources/objects/snowman/snowman_finish.obj", true);
     Model treeModel("resources/objects/Christmas_Tree/Christmas_Tree/12150_Christmas_Tree_V2_L2.obj");
 
     snowManModel.SetShaderTextureNamePrefix("material.");
@@ -378,7 +392,11 @@ int main() {
 
     unsigned int cubemapTexture = loadCubemap(faces);
 
+    snowManShader.use();
+    snowManShader.setInt("diffuseTexture", 0);
 
+    skyboxShader.use();
+    skyboxShader.setInt("skybox", 0);
     auto &initServiceLocator = rg::ServiceLocator::Get();
     // draw in wireframe
     //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -410,23 +428,57 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // don't forget to enable shader before setting uniforms
+        // enable shader before setting uniforms
         snowManShader.use();
-        pointLight.position = glm::vec3(4.0 * cos(0.9), 4.0f, 4.0 * sin(0.9));
-        snowManShader.setVec3("pointLight.position", pointLight.position);
-        snowManShader.setVec3("pointLight.ambient", pointLight.ambient);
-        snowManShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-        snowManShader.setVec3("pointLight.specular", pointLight.specular);
-        snowManShader.setFloat("pointLight.constant", pointLight.constant);
-        snowManShader.setFloat("pointLight.linear", pointLight.linear);
-        snowManShader.setFloat("pointLight.quadratic", pointLight.quadratic);
-        snowManShader.setVec3("viewPosition", programState->camera.Position);
-        snowManShader.setFloat("material.shininess", 32.0f);
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = programState->camera.GetViewMatrix();
         snowManShader.setMat4("projection", projection);
         snowManShader.setMat4("view", view);
+
+        snowManShader.setVec3("viewPosition", programState->camera.Position);
+        snowManShader.setFloat("material.shininess", 32.0f);
+        // directional light
+        snowManShader.setVec3("dirLight.direction", programState->dirLightDir);
+        snowManShader.setVec3("dirLight.ambient", glm::vec3(programState->dirLightAmbDiffSpec.x));
+        snowManShader.setVec3("dirLight.diffuse", glm::vec3(programState->dirLightAmbDiffSpec.y));
+        snowManShader.setVec3("dirLight.specular", glm::vec3(programState->dirLightAmbDiffSpec.z));
+
+        snowManShader.setVec3("pointLights[0].position", glm::vec3(-5.0f, -10.0f,-5.0f));
+        snowManShader.setVec3("pointLights[0].ambient", pointLight.ambient);
+        snowManShader.setVec3("pointLights[0].diffuse", pointLight.diffuse);
+        snowManShader.setVec3("pointLights[0].specular", pointLight.specular);
+        snowManShader.setFloat("pointLights[0].constant", pointLight.constant);
+        snowManShader.setFloat("pointLights[0].linear", pointLight.linear);
+        snowManShader.setFloat("pointLights[0].quadratic", pointLight.quadratic);
+
+        snowManShader.setVec3("pointLights[1].position", glm::vec3(-10.0f ,110.0f, 1.0f));
+        snowManShader.setVec3("pointLights[1].ambient", pointLight.ambient);
+        snowManShader.setVec3("pointLights[1].diffuse", pointLight.diffuse);
+        snowManShader.setVec3("pointLights[1].specular", pointLight.specular);
+        snowManShader.setFloat("pointLights[1].constant", pointLight.constant);
+        snowManShader.setFloat("pointLights[1].linear", pointLight.linear);
+        snowManShader.setFloat("pointLights[1].quadratic", pointLight.quadratic);
+
+        snowManShader.setBool("blinn", programState->blinn);
+        // spotLight
+        if (programState->spotlightOn) {
+            snowManShader.setVec3("spotLight.position", programState->camera.Position);
+            snowManShader.setVec3("spotLight.direction", programState->camera.Front);
+            snowManShader.setVec3("spotLight.ambient", 0.0f, 0.0f, 0.0f);
+            snowManShader.setVec3("spotLight.diffuse", 1.0f, 1.0f, 1.0f);
+            snowManShader.setVec3("spotLight.specular", 1.0f, 1.0f, 1.0f);
+            snowManShader.setFloat("spotLight.constant", 1.0f);
+            snowManShader.setFloat("spotLight.linear", 0.09);
+            snowManShader.setFloat("spotLight.quadratic", 0.032);
+            snowManShader.setFloat("spotLight.cutOff", glm::cos(glm::radians(12.5f)));
+            snowManShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(15.0f)));
+        }else{
+            snowManShader.setVec3("spotLight.diffuse", 0.0f, 0.0f, 0.0f);
+            snowManShader.setVec3("spotLight.specular", 0.0f, 0.0f, 0.0f);
+        }
+
 
         // render the loaded model
         glm::mat4 model = glm::mat4(1.0f);
@@ -503,14 +555,14 @@ int main() {
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
 
-
+        //skybox
         glDepthFunc(GL_LEQUAL); //change depth function so depth test passes when values are equal to depth buffer's content
         skyboxShader.use();
         view = glm::mat4(glm::mat3(programState->camera.GetViewMatrix())); //remove translation from the view matrix
         skyboxShader.setMat4("view", view);
         skyboxShader.setMat4("projection", projection);
 
-        //skybox cube
+
         glBindVertexArray(skyboxVAO);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
@@ -562,6 +614,16 @@ void processInput(GLFWwindow *window) {
         programState->camera.ProcessKeyboard(LEFT, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         programState->camera.ProcessKeyboard(RIGHT, deltaTime);
+
+    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS and !programState->blinnKeyPressed)
+    {
+        programState->blinn = !programState->blinn;
+        programState->blinnKeyPressed = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_RELEASE)
+    {
+        programState->blinnKeyPressed = false;
+    }
 #else
 
 #endif
@@ -627,6 +689,7 @@ void DrawImGui(ProgramState *programState) {
         ImGui::DragFloat("pointLight.constant", &programState->pointLight.constant, 0.05, 0.0, 1.0);
         ImGui::DragFloat("pointLight.linear", &programState->pointLight.linear, 0.05, 0.0, 1.0);
         ImGui::DragFloat("pointLight.quadratic", &programState->pointLight.quadratic, 0.05, 0.0, 1.0);
+
         ImGui::End();
     }
 
