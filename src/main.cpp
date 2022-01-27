@@ -77,6 +77,9 @@ struct ProgramState {
     bool spotlightOn = true;
     bool blinn = false;
     bool blinnKeyPressed = false;
+
+    bool bloom = false;
+
     PointLight pointLight;
     ProgramState()
             : camera(glm::vec3(0.0f, -1.0f, 12.0f)) {}
@@ -300,6 +303,61 @@ int main() {
            glm::vec3 (4.7f, 4.0f, -0.55f)
     };
 
+    float cubeVertices[] = {
+            // back face
+            -0.5f, -0.5f, -0.5f,  0.0f, 0.0f, // bottom-left
+            0.5f, -0.5f, -0.5f,  1.0f, 0.0f, // bottom-right
+            0.5f,  0.5f, -0.5f,  1.0f, 1.0f, // top-right
+            0.5f,  0.5f, -0.5f,  1.0f, 1.0f, // top-right
+            -0.5f,  0.5f, -0.5f,  0.0f, 1.0f, // top-left
+            -0.5f, -0.5f, -0.5f,  0.0f, 0.0f, // bottom-left
+            // front face
+            -0.5f, -0.5f,  0.5f,  0.0f, 0.0f, // bottom-left
+            0.5f,  0.5f,  0.5f,  1.0f, 1.0f, // top-right
+            0.5f, -0.5f,  0.5f,  1.0f, 0.0f, // bottom-right
+            0.5f,  0.5f,  0.5f,  1.0f, 1.0f, // top-right
+            -0.5f, -0.5f,  0.5f,  0.0f, 0.0f, // bottom-left
+            -0.5f,  0.5f,  0.5f,  0.0f, 1.0f, // top-left
+            // left face
+            -0.5f,  0.5f,  0.5f,  1.0f, 0.0f, // top-right
+            -0.5f, -0.5f, -0.5f,  0.0f, 1.0f, // bottom-left
+            -0.5f,  0.5f, -0.5f,  1.0f, 1.0f, // top-left
+            -0.5f, -0.5f, -0.5f,  0.0f, 1.0f, // bottom-left
+            -0.5f,  0.5f,  0.5f,  1.0f, 0.0f, // top-right
+            -0.5f, -0.5f,  0.5f,  0.0f, 0.0f, // bottom-right
+            // right face
+            0.5f,  0.5f,  0.5f,  1.0f, 0.0f, // top-left
+            0.5f,  0.5f, -0.5f,  1.0f, 1.0f, // top-right
+            0.5f, -0.5f, -0.5f,  0.0f, 1.0f, // bottom-right
+            0.5f, -0.5f, -0.5f,  0.0f, 1.0f, // bottom-right
+            0.5f, -0.5f,  0.5f,  0.0f, 0.0f, // bottom-left
+            0.5f,  0.5f,  0.5f,  1.0f, 0.0f, // top-left
+            // bottom face
+            -0.5f, -0.5f, -0.5f,  0.0f, 1.0f, // top-right
+            0.5f, -0.5f,  0.5f,  1.0f, 0.0f, // bottom-left
+            0.5f, -0.5f, -0.5f,  1.0f, 1.0f, // top-left
+            0.5f, -0.5f,  0.5f,  1.0f, 0.0f, // bottom-left
+            -0.5f, -0.5f, -0.5f,  0.0f, 1.0f, // top-right
+            -0.5f, -0.5f,  0.5f,  0.0f, 0.0f, // bottom-right
+            // top face
+            -0.5f,  0.5f, -0.5f,  0.0f, 1.0f, // top-left
+            0.5f,  0.5f, -0.5f,  1.0f, 1.0f, // top-right
+            0.5f,  0.5f,  0.5f,  1.0f, 0.0f, // bottom-right
+            0.5f,  0.5f,  0.5f,  1.0f, 0.0f, // bottom-right
+            -0.5f,  0.5f,  0.5f,  0.0f, 0.0f, // bottom-left
+            -0.5f,  0.5f, -0.5f,  0.0f, 1.0f  // top-left
+    };
+
+    vector<glm::vec3> cubePosition
+            {
+                    glm::vec3(7.0f, 0.0f, -11.5f),
+                    glm::vec3( 8.0f, 0.0f, -11.5f),
+                    glm::vec3( 9.0f, 0.0f, -11.5f),
+                    glm::vec3(7.5f, 1.0f, -11.5f),
+                    glm::vec3 (8.5f, 1.0f, -11.5f),
+                    glm::vec3(8.0f, 2.0f, -11.5f)
+            };
+
 
     // gift VAO, VABO
     unsigned int giftVBO, giftVAO;
@@ -347,10 +405,15 @@ int main() {
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
     glBindVertexArray(0);
 
+
     // configure global opengl state
     // -----------------------------
     glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
 
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_FRONT);
+//    glFrontFace(GL_CW);
     // build and compile shaders
     // -------------------------
     Shader snowManShader("resources/shaders/model.vs", "resources/shaders/model.fs");
@@ -358,9 +421,10 @@ int main() {
     Shader treeShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
     Shader snowShader("resources/shaders/snowflakeShader.vs", "resources/shaders/snowflakeShader.fs");
-
+    Shader shader("resources/shaders/face_culling.vs", "resources/shaders/face_culling.fs");
     // load textures
     unsigned int giftTexture = loadTexture("resources/textures/wrapPaper.png");
+    unsigned int iceTexture = loadTexture("resources/textures/ice_texture.jpg");
     unsigned int snowflakeTexture = loadTexture("resources/textures/snowflake.png");
 
     // load models
@@ -397,6 +461,31 @@ int main() {
 
     skyboxShader.use();
     skyboxShader.setInt("skybox", 0);
+
+
+    // cube VAO
+    unsigned int cubeVAO, cubeVBO;
+    glGenVertexArrays(1, &cubeVAO);
+    glGenBuffers(1, &cubeVBO);
+    glBindVertexArray(cubeVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(cubeVertices), &cubeVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glBindVertexArray(0);
+
+
+
+    // shader configuration
+    // --------------------
+    shader.use();
+    shader.setInt("texture1", 0);
+
+
+
+
     auto &initServiceLocator = rg::ServiceLocator::Get();
     // draw in wireframe
     //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -524,18 +613,16 @@ int main() {
         glBindVertexArray(giftVAO);
 
         for (unsigned int i = 0; i < programState->numOfGifts; i++) {
-        // render the loaded model
+
             glm::mat4 giftModel = glm::mat4(1.0f);
             giftModel = glm::translate(giftModel,
-                                   giftPositions[i]); // translate it down so it's at the center of the scene
-            //giftModel = glm::rotate(giftModel, ((float)tan(glfwGetTime() * 0.2)), glm::vec3(0.0f, 0.0f, 1.0f));
+                                   giftPositions[i]);
             giftModel = glm::scale(giftModel, glm::vec3(programState->giftScale));
             giftShader.setMat4("model", giftModel);
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }
-        glBindVertexArray(0);
 
-        // using blanding for snowflakes- discard techinque
+        // using blanding for snowflakes- discard
         snowShader.use();
         snowShader.setMat4("projection", projection);
         snowShader.setMat4("view", view);
@@ -546,7 +633,6 @@ int main() {
         {
             model = glm::mat4(1.0f);
             model = glm::translate(model, snowflakePosition[i]);
-            //float coefTranslate = -0.5*tan(glfwGetTime()*0.6);
             model = glm::translate(model, glm::vec3(0.0f,-0.5*tan(glfwGetTime()*0.6), 0.0f));
             float angle= 20*tan(glfwGetTime());
             model=glm::rotate(model,glm::radians(angle),glm::vec3(1.0f,0.5f,0.5f));
@@ -555,6 +641,23 @@ int main() {
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
 
+        shader.use();
+        shader.setMat4("view", view);
+        shader.setMat4("projection", projection);
+
+        // cubes
+        glBindVertexArray(cubeVAO);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, iceTexture);
+
+
+        for (unsigned i = 0; i < 6; i++) {
+            glCullFace(GL_BACK);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, cubePosition[i]);
+            shader.setMat4("model", model);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
         //skybox
         glDepthFunc(GL_LEQUAL); //change depth function so depth test passes when values are equal to depth buffer's content
         skyboxShader.use();
@@ -593,6 +696,8 @@ int main() {
     glDeleteBuffers(1, &giftVBO);
     glDeleteVertexArrays(1, &skyboxVAO);
     glDeleteBuffers(1, &skyboxVBO);
+    glDeleteVertexArrays(1, &transparentVAO);
+    glDeleteBuffers(1, &transparentVBO);
     // glfw: terminate, clearing all previously allocated GLFW resources.
     // ------------------------------------------------------------------
     glfwTerminate();
