@@ -27,6 +27,8 @@ void processInput(GLFWwindow *window);
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
 
+void renderQuad();
+
 unsigned int loadTexture(char const * path);
 unsigned int loadCubemap(vector <std::string> faces);
 
@@ -75,10 +77,12 @@ struct ProgramState {
     glm::vec3 dirLightDir = glm::vec3(-0.2f, -1.0f, -0.3f);
     glm::vec3 dirLightAmbDiffSpec = glm::vec3(0.3f, 0.3f,0.2f);
     bool spotlightOn = true;
-    bool blinn = false;
+    bool blinn = true;
     bool blinnKeyPressed = false;
 
-    bool bloom = false;
+    bool bloom = true;
+    bool bloomKeyPressed = false;
+    float exposure = 1.0f;
 
     PointLight pointLight;
     ProgramState()
@@ -413,15 +417,18 @@ int main() {
 
     glEnable(GL_CULL_FACE);
     glCullFace(GL_FRONT);
-//    glFrontFace(GL_CW);
+    //glFrontFace(GL_CW);
+    
     // build and compile shaders
     // -------------------------
-    Shader snowManShader("resources/shaders/model.vs", "resources/shaders/model.fs");
+    Shader modelShader("resources/shaders/model.vs", "resources/shaders/model.fs");
     Shader giftShader("resources/shaders/box.vs", "resources/shaders/box.fs");
-    Shader treeShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
     Shader snowShader("resources/shaders/snowflakeShader.vs", "resources/shaders/snowflakeShader.fs");
     Shader shader("resources/shaders/face_culling.vs", "resources/shaders/face_culling.fs");
+    Shader shaderBlur("resources/shaders/blur.vs", "resources/shaders/blur.fs");
+    Shader shaderBloom("resources/shaders/bloom.vs", "resources/shaders/bloom.fs");
+
     // load textures
     unsigned int giftTexture = loadTexture("resources/textures/wrapPaper.png");
     unsigned int iceTexture = loadTexture("resources/textures/ice_texture.jpg");
@@ -434,6 +441,64 @@ int main() {
 
     snowManModel.SetShaderTextureNamePrefix("material.");
     treeModel.SetShaderTextureNamePrefix("material.");
+
+    //Bloom-------------------------------------------------------------------------------------------------------------
+     // configure framebuffers
+     // ---------------------------------------
+     unsigned int hdrFBO;
+    glGenFramebuffers(1, &hdrFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
+    // create 2 color buffers (1 for normal rendering, other for brightness threshold values)
+    unsigned int colorBuffers[2];
+    glGenTextures(2, colorBuffers);
+    for (unsigned int i = 0; i < 2; i++)
+    {
+        glBindTexture(GL_TEXTURE_2D, colorBuffers[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);  // we clamp to the edge as the blur filter would otherwise sample repeated texture values!
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        // attach texture to framebuffer
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, colorBuffers[i], 0);
+    }
+    // create and attach depth buffer (renderbuffer)
+    unsigned int rboDepth;
+    glGenRenderbuffers(1, &rboDepth);
+    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, SCR_WIDTH, SCR_HEIGHT);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
+    // tell OpenGL which color attachments we'll use (of this framebuffer) for rendering
+    glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
+    unsigned int attachments[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+    glDrawBuffers(2, attachments);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorBuffers[0], 0); //<=
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);//<=
+    // check if framebuffer is complete
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "Framebuffer not complete!" << std::endl;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // ping-pong-framebuffer for blurring
+    unsigned int pingpongFBO[2];
+    unsigned int pingpongColorbuffers[2];
+    glGenFramebuffers(2, pingpongFBO);
+    glGenTextures(2, pingpongColorbuffers);
+    for (unsigned int i = 0; i < 2; i++)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[i]);
+        glBindTexture(GL_TEXTURE_2D, pingpongColorbuffers[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // we clamp to the edge as the blur filter would otherwise sample repeated texture values!
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, pingpongColorbuffers[i], 0);
+        // also check if framebuffers are complete (no need for depth buffer)
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            std::cout << "Framebuffer not complete!" << std::endl;
+    }
+
 
     PointLight& pointLight = programState->pointLight;
     pointLight.position = glm::vec3(4.0f, 3.0, -8.0);
@@ -456,8 +521,8 @@ int main() {
 
     unsigned int cubemapTexture = loadCubemap(faces);
 
-    snowManShader.use();
-    snowManShader.setInt("diffuseTexture", 0);
+    modelShader.use();
+    modelShader.setInt("diffuseTexture", 0);
 
     skyboxShader.use();
     skyboxShader.setInt("skybox", 0);
@@ -483,7 +548,11 @@ int main() {
     shader.use();
     shader.setInt("texture1", 0);
 
-
+    shaderBlur.use();
+    shaderBlur.setInt("image", 0);
+    shaderBloom.use();
+    shaderBloom.setInt("scene", 0);
+    shaderBloom.setInt("bloomBlur", 1);
 
 
     auto &initServiceLocator = rg::ServiceLocator::Get();
@@ -514,86 +583,71 @@ int main() {
         // render
         // ------
         glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+        glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // don't forget to enable shader before setting uniforms
-        // enable shader before setting uniforms
-        snowManShader.use();
+        modelShader.use();
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = programState->camera.GetViewMatrix();
-        snowManShader.setMat4("projection", projection);
-        snowManShader.setMat4("view", view);
+        modelShader.setMat4("projection", projection);
+        modelShader.setMat4("view", view);
 
-        snowManShader.setVec3("viewPosition", programState->camera.Position);
-        snowManShader.setFloat("material.shininess", 32.0f);
+        modelShader.setVec3("viewPosition", programState->camera.Position);
+        modelShader.setFloat("material.shininess", 32.0f);
         // directional light
-        snowManShader.setVec3("dirLight.direction", programState->dirLightDir);
-        snowManShader.setVec3("dirLight.ambient", glm::vec3(programState->dirLightAmbDiffSpec.x));
-        snowManShader.setVec3("dirLight.diffuse", glm::vec3(programState->dirLightAmbDiffSpec.y));
-        snowManShader.setVec3("dirLight.specular", glm::vec3(programState->dirLightAmbDiffSpec.z));
+        modelShader.setVec3("dirLight.direction", programState->dirLightDir);
+        modelShader.setVec3("dirLight.ambient", glm::vec3(programState->dirLightAmbDiffSpec.x));
+        modelShader.setVec3("dirLight.diffuse", glm::vec3(programState->dirLightAmbDiffSpec.y));
+        modelShader.setVec3("dirLight.specular", glm::vec3(programState->dirLightAmbDiffSpec.z));
 
-        snowManShader.setVec3("pointLights[0].position", glm::vec3(-5.0f, -10.0f,-5.0f));
-        snowManShader.setVec3("pointLights[0].ambient", pointLight.ambient);
-        snowManShader.setVec3("pointLights[0].diffuse", pointLight.diffuse);
-        snowManShader.setVec3("pointLights[0].specular", pointLight.specular);
-        snowManShader.setFloat("pointLights[0].constant", pointLight.constant);
-        snowManShader.setFloat("pointLights[0].linear", pointLight.linear);
-        snowManShader.setFloat("pointLights[0].quadratic", pointLight.quadratic);
+        modelShader.setVec3("pointLights[0].position", glm::vec3(-5.0f, -10.0f,-5.0f));
+        modelShader.setVec3("pointLights[0].ambient", pointLight.ambient);
+        modelShader.setVec3("pointLights[0].diffuse", pointLight.diffuse);
+        modelShader.setVec3("pointLights[0].specular", pointLight.specular);
+        modelShader.setFloat("pointLights[0].constant", pointLight.constant);
+        modelShader.setFloat("pointLights[0].linear", pointLight.linear);
+        modelShader.setFloat("pointLights[0].quadratic", pointLight.quadratic);
 
-        snowManShader.setVec3("pointLights[1].position", glm::vec3(-10.0f ,110.0f, 1.0f));
-        snowManShader.setVec3("pointLights[1].ambient", pointLight.ambient);
-        snowManShader.setVec3("pointLights[1].diffuse", pointLight.diffuse);
-        snowManShader.setVec3("pointLights[1].specular", pointLight.specular);
-        snowManShader.setFloat("pointLights[1].constant", pointLight.constant);
-        snowManShader.setFloat("pointLights[1].linear", pointLight.linear);
-        snowManShader.setFloat("pointLights[1].quadratic", pointLight.quadratic);
+        modelShader.setVec3("pointLights[1].position", glm::vec3(-10.0f ,110.0f, 1.0f));
+        modelShader.setVec3("pointLights[1].ambient", pointLight.ambient);
+        modelShader.setVec3("pointLights[1].diffuse", pointLight.diffuse);
+        modelShader.setVec3("pointLights[1].specular", pointLight.specular);
+        modelShader.setFloat("pointLights[1].constant", pointLight.constant);
+        modelShader.setFloat("pointLights[1].linear", pointLight.linear);
+        modelShader.setFloat("pointLights[1].quadratic", pointLight.quadratic);
 
-        snowManShader.setBool("blinn", programState->blinn);
+        modelShader.setBool("blinn", programState->blinn);
         // spotLight
         if (programState->spotlightOn) {
-            snowManShader.setVec3("spotLight.position", programState->camera.Position);
-            snowManShader.setVec3("spotLight.direction", programState->camera.Front);
-            snowManShader.setVec3("spotLight.ambient", 0.0f, 0.0f, 0.0f);
-            snowManShader.setVec3("spotLight.diffuse", 1.0f, 1.0f, 1.0f);
-            snowManShader.setVec3("spotLight.specular", 1.0f, 1.0f, 1.0f);
-            snowManShader.setFloat("spotLight.constant", 1.0f);
-            snowManShader.setFloat("spotLight.linear", 0.09);
-            snowManShader.setFloat("spotLight.quadratic", 0.032);
-            snowManShader.setFloat("spotLight.cutOff", glm::cos(glm::radians(12.5f)));
-            snowManShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(15.0f)));
+            modelShader.setVec3("spotLight.position", programState->camera.Position);
+            modelShader.setVec3("spotLight.direction", programState->camera.Front);
+            modelShader.setVec3("spotLight.ambient", 0.0f, 0.0f, 0.0f);
+            modelShader.setVec3("spotLight.diffuse", 1.0f, 1.0f, 1.0f);
+            modelShader.setVec3("spotLight.specular", 1.0f, 1.0f, 1.0f);
+            modelShader.setFloat("spotLight.constant", 1.0f);
+            modelShader.setFloat("spotLight.linear", 0.09);
+            modelShader.setFloat("spotLight.quadratic", 0.032);
+            modelShader.setFloat("spotLight.cutOff", glm::cos(glm::radians(12.5f)));
+            modelShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(15.0f)));
         }else{
-            snowManShader.setVec3("spotLight.diffuse", 0.0f, 0.0f, 0.0f);
-            snowManShader.setVec3("spotLight.specular", 0.0f, 0.0f, 0.0f);
+            modelShader.setVec3("spotLight.diffuse", 0.0f, 0.0f, 0.0f);
+            modelShader.setVec3("spotLight.specular", 0.0f, 0.0f, 0.0f);
         }
 
 
-        // render the loaded model
+        // render the loaded snowman model
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model,
                                programState->snowManPosition); // translate it down so it's at the center of the scene
         model = glm::scale(model, glm::vec3(programState->snowManScale));    // it's a bit too big for snowMan scene, so scale it down
 
-        snowManShader.setMat4("model", model);
-        snowManModel.Draw(snowManShader);
+        modelShader.setMat4("model", model);
+        snowManModel.Draw(modelShader);
 
-        treeShader.use();
-        pointLight.position = glm::vec3(4.0 * cos(0.9), 4.0f, 4.0 * sin(0.9));
-        treeShader.setVec3("pointLight.position", pointLight.position);
-        treeShader.setVec3("pointLight.ambient", pointLight.ambient);
-        treeShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-        treeShader.setVec3("pointLight.specular", pointLight.specular);
-        treeShader.setFloat("pointLight.constant", pointLight.constant);
-        treeShader.setFloat("pointLight.linear", pointLight.linear);
-        treeShader.setFloat("pointLight.quadratic", pointLight.quadratic);
-        treeShader.setVec3("viewPosition", programState->camera.Position);
-        treeShader.setFloat("material.shininess", 32.0f);
-
-        treeShader.setMat4("projection", projection);
-        treeShader.setMat4("view", view);
-
-        // render the loaded model
+        modelShader.setVec3("pointLights[0].position", glm::vec3(4.0 * cos(0.9), 4.0f, 4.0 * sin(0.9)));
+        // render the loaded tree model
         glm::mat4 treeModelMatrix = glm::mat4(1.0f);
         treeModelMatrix = glm::translate(treeModelMatrix,
                                programState->treePosition);
@@ -601,8 +655,8 @@ int main() {
         treeModelMatrix = glm::rotate(treeModelMatrix, -45.0f, glm::vec3(1.0f, 0.0f, 0.0f));
         treeModelMatrix = glm::rotate(treeModelMatrix, -45.0f, glm::vec3(0.0f, 0.0f, 1.0f));
 
-        treeShader.setMat4("model", treeModelMatrix);
-        treeModel.Draw(treeShader);
+        modelShader.setMat4("model", treeModelMatrix);
+        treeModel.Draw(modelShader);
 
         giftShader.use();
 
@@ -676,7 +730,34 @@ int main() {
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
 
+        // blur bright fragments with two-pass Gaussian Blur
+        // --------------------------------------------------
+        bool horizontal = true, first_iteration = true;
+        unsigned int amount = 5;
+        shaderBlur.use();
+        for (unsigned int i = 0; i < amount; i++)
+        {
+            glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[horizontal]);
+            shaderBlur.setInt("horizontal", horizontal);
+            glBindTexture(GL_TEXTURE_2D, first_iteration ? colorBuffers[1] : pingpongColorbuffers[!horizontal]);  // bind texture of other framebuffer (or scene if first iteration)
+            renderQuad();
+            horizontal = !horizontal;
+            if (first_iteration)
+                first_iteration = false;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+        // now render floating point color buffer to 2D quad and tonemap HDR colors to default framebuffer's (clamped) color range
+        // --------------------------------------------------------------------------------------------------------------------------
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        shaderBloom.use();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, colorBuffers[0]);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, pingpongColorbuffers[!horizontal]);
+        shaderBloom.setInt("bloom", programState->bloom);
+        shaderBloom.setFloat("exposure", programState->exposure);
+        renderQuad();
 
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
         // -------------------------------------------------------------------------------
@@ -895,4 +976,35 @@ unsigned int loadCubemap(vector <std::string> faces)
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
     return textureID;
+}
+
+// renderQuad() renders a 1x1 XY quad in NDC
+// -----------------------------------------
+unsigned int quadVAO = 0;
+unsigned int quadVBO;
+void renderQuad()
+{
+    if (quadVAO == 0)
+    {
+        float quadVertices[] = {
+                // positions        // texture Coords
+                -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+                -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+                1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+                1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+        };
+        // setup plane VAO
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    }
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
 }
