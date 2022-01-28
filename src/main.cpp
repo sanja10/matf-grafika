@@ -418,7 +418,7 @@ int main() {
     glEnable(GL_CULL_FACE);
     glCullFace(GL_FRONT);
     //glFrontFace(GL_CW);
-    
+
     // build and compile shaders
     // -------------------------
     Shader modelShader("resources/shaders/model.vs", "resources/shaders/model.fs");
@@ -801,14 +801,24 @@ void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         programState->camera.ProcessKeyboard(RIGHT, deltaTime);
 
-    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS and !programState->blinnKeyPressed)
+    if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS and !programState->blinnKeyPressed)
     {
         programState->blinn = !programState->blinn;
         programState->blinnKeyPressed = true;
     }
-    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_RELEASE)
+    if (glfwGetKey(window, GLFW_KEY_P) == GLFW_RELEASE)
     {
         programState->blinnKeyPressed = false;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS and !programState->blinnKeyPressed)
+    {
+        programState->bloom = !programState->bloom;
+        programState->bloomKeyPressed = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_RELEASE)
+    {
+        programState->bloomKeyPressed = false;
     }
 #else
 
@@ -993,7 +1003,7 @@ void renderQuad()
                 1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
                 1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
         };
-        // setup plane VAO
+        // setup  VAO
         glGenVertexArrays(1, &quadVAO);
         glGenBuffers(1, &quadVBO);
         glBindVertexArray(quadVAO);
