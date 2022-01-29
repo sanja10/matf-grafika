@@ -1,7 +1,7 @@
 # matf-grafika winter scene
 Projekat iz računarske grafike. Za izradu projekta korišćen je skelet `https://github.com/matf-racunarska-grafika/project_base`.
 
-[Demo video] https://www.youtube.com/watch?v=51tJHW8eRYU
+Demo video se nalazi na linku https://www.youtube.com/watch?v=51tJHW8eRYU
 
 #Uputstvo
 1. `git clone https://github.com/mildim/RG_Projekat.git`
