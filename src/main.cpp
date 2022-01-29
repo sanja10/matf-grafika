@@ -104,7 +104,11 @@ void ProgramState::SaveToFile(std::string filename) {
         << camera.Position.z << '\n'
         << camera.Front.x << '\n'
         << camera.Front.y << '\n'
-        << camera.Front.z << '\n';
+        << camera.Front.z << '\n'
+        << bloom << '\n'
+        << exposure << '\n'
+        << dirLightDir.x << '\n' << dirLightDir.y << '\n' << dirLightDir.z << '\n'
+        << dirLightAmbDiffSpec.x << '\n' << dirLightAmbDiffSpec.y << '\n' << dirLightAmbDiffSpec.z ;
 }
 
 void ProgramState::LoadFromFile(std::string filename) {
@@ -119,7 +123,11 @@ void ProgramState::LoadFromFile(std::string filename) {
            >> camera.Position.z
            >> camera.Front.x
            >> camera.Front.y
-           >> camera.Front.z;
+           >> camera.Front.z
+           >> bloom
+           >> exposure
+           >> dirLightDir.x >> dirLightDir.y >> dirLightDir.z
+           >> dirLightAmbDiffSpec.x >>  dirLightAmbDiffSpec.y >> dirLightAmbDiffSpec.z ;
     }
 }
 
@@ -363,7 +371,7 @@ int main() {
             };
 
 
-    // gift VAO, VABO
+    // gift VAO, VBO
     unsigned int giftVBO, giftVAO;
     glGenVertexArrays(1, &giftVAO);
     glGenBuffers(1, &giftVBO);
@@ -726,8 +734,7 @@ int main() {
         glBindVertexArray(0);
         glDepthFunc(GL_LESS); //set depth function back to default
 
-        if (programState->ImGuiEnabled)
-            DrawImGui(programState);
+
 
         // blur bright fragments with two-pass Gaussian Blur
         // --------------------------------------------------
@@ -757,6 +764,8 @@ int main() {
         shaderBloom.setFloat("exposure", programState->exposure);
         renderQuad();
 
+        if (programState->ImGuiEnabled)
+            DrawImGui(programState);
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
         // -------------------------------------------------------------------------------
         glfwSwapBuffers(window);
@@ -799,25 +808,7 @@ void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         programState->camera.ProcessKeyboard(RIGHT, deltaTime);
 
-    if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS and !programState->blinnKeyPressed)
-    {
-        programState->blinn = !programState->blinn;
-        programState->blinnKeyPressed = true;
-    }
-    if (glfwGetKey(window, GLFW_KEY_P) == GLFW_RELEASE)
-    {
-        programState->blinnKeyPressed = false;
-    }
 
-    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS and !programState->bloomKeyPressed)
-    {
-        programState->bloom = !programState->bloom;
-        programState->bloomKeyPressed = true;
-    }
-    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_RELEASE)
-    {
-        programState->bloomKeyPressed = false;
-    }
 #else
 
 #endif
@@ -884,6 +875,9 @@ void DrawImGui(ProgramState *programState) {
         ImGui::DragFloat("pointLight.linear", &programState->pointLight.linear, 0.05, 0.0, 1.0);
         ImGui::DragFloat("pointLight.quadratic", &programState->pointLight.quadratic, 0.05, 0.0, 1.0);
 
+        ImGui::DragFloat("exposure", &programState->exposure);
+        ImGui::Checkbox("bloom", &programState->bloom);
+
         ImGui::End();
     }
 
@@ -911,6 +905,26 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
         } else {
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
         }
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS and !programState->blinnKeyPressed)
+    {
+        programState->blinn = !programState->blinn;
+        programState->blinnKeyPressed = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_P) == GLFW_RELEASE)
+    {
+        programState->blinnKeyPressed = false;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS and !programState->bloomKeyPressed)
+    {
+        programState->bloom = !programState->bloom;
+        programState->bloomKeyPressed = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_RELEASE)
+    {
+        programState->bloomKeyPressed = false;
     }
 #else
     rg::ServiceLocator::Get().getInputController().processKeyCallback(window, key, action);
